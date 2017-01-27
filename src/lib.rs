@@ -15,20 +15,107 @@ use std::cell::UnsafeCell;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// `Lazy<T>` is a lazily initialized synchronized holder type.
-pub struct Lazy<T> {
+enum ThisOrThat<T, U> {
+    This(T),
+    That(U),
+}
+
+/// `LazyTransform<T, U>` is a synchronized holder type, that holds a value of
+/// type T until it is lazily converted into a value of type U.
+pub struct LazyTransform<T, U> {
     initialized: AtomicBool,
     lock: Mutex<()>,
-    value: UnsafeCell<Option<T>>,
+    value: UnsafeCell<Option<ThisOrThat<T, U>>>,
+}
+
+// Implementation details.
+impl<T, U> LazyTransform<T, U> {
+    fn extract<'a>(&'a self) -> Option<&'a U> {
+        // Make sure we're initialized first!
+        match unsafe { (*self.value.get()).as_ref() } {
+            None => None,
+            Some(&ThisOrThat::This(_)) => panic!(), // Should already be initialized!
+            Some(&ThisOrThat::That(ref that)) => Some(that),
+        }
+    }
+}
+
+// Public API.
+impl<T, U> LazyTransform<T, U> {
+    /// Construct a new, untransformed `LazyTransform<T, U>` with an argument of
+    /// type T.
+    pub fn new(t: T) -> LazyTransform<T, U> {
+        LazyTransform {
+            initialized: AtomicBool::new(false),
+            lock: Mutex::new(()),
+            value: UnsafeCell::new(Some(ThisOrThat::This(t))),
+        }
+    }
+
+    /// Get a reference to the transformed value, invoking `f` to transform it
+    /// if the `LazyTransform<T, U>` has yet to be transformed.  It is
+    /// guaranteed that if multiple calls to `get_or_create` race, only one
+    /// will invoke its closure, and every call will receive a reference to the
+    /// newly transformed value.
+    ///
+    /// The closure can only ever be called once, so think carefully about what
+    /// transformation you want to apply!
+    pub fn get_or_create<'a, F>(&'a self, f: F) -> &'a U
+        where F: FnOnce(T) -> U
+    {
+        // In addition to being correct, this pattern is vouched for by Hans Boehm
+        // (http://schd.ws/hosted_files/cppcon2016/74/HansWeakAtomics.pdf Page 27)
+        if !self.initialized.load(Ordering::Acquire) {
+            // We *may* not be initialized. We have to block to be certain.
+            let _lock = self.lock.lock().unwrap();
+            if !self.initialized.load(Ordering::Relaxed) {
+                // Ok, we're definitely uninitialized.
+                // Safe to fiddle with the UnsafeCell now, because we're locked,
+                // and there can't be any outstanding references.
+                let value = unsafe { &mut *self.value.get() };
+                let this = match value.take().unwrap() {
+                    ThisOrThat::This(t) => t,
+                    ThisOrThat::That(_) => panic!(), // Can't already be initialized!
+                };
+                *value = Some(ThisOrThat::That(f(this)));
+                self.initialized.store(true, Ordering::Release);
+            } else {
+                // We raced, and someone else initialized us. We can fall
+                // through now.
+            }
+        }
+
+        // We're initialized, our value is immutable, no synchronization needed.
+        self.extract().unwrap()
+    }
+
+    /// Get a reference to the transformed value, returning `Some(&U)` if the
+    /// `LazyTransform<T, U>` has been transformed or `None` if it has not.  It
+    /// is guaranteed that if a reference is returned it is to the transformed
+    /// value inside the the `LazyTransform<T>`.
+    pub fn get<'a>(&'a self) -> Option<&'a U> {
+        if self.initialized.load(Ordering::Acquire) {
+            // We're initialized, our value is immutable, no synchronization needed.
+            self.extract()
+        } else {
+            None
+        }
+    }
+}
+
+unsafe impl<T, U> Sync for LazyTransform<T, U> { }
+
+/// `Lazy<T>` is a lazily initialized synchronized holder type.  You can think
+/// of it as a LazyTransform where the initial type doesn't exist.
+pub struct Lazy<T> {
+    inner: LazyTransform<(), T>,
 }
 
 impl<T> Lazy<T> {
     /// Construct a new, uninitialized `Lazy<T>`.
     pub fn new() -> Lazy<T> {
         Lazy {
-            initialized: AtomicBool::new(false),
-            lock: Mutex::new(()),
-            value: UnsafeCell::new(None),
+            inner: LazyTransform::new(()),
         }
     }
 
@@ -42,26 +129,9 @@ impl<T> Lazy<T> {
     pub fn get_or_create<'a, F>(&'a self, f: F) -> &'a T
         where F: FnOnce() -> T
     {
-        // In addition to being correct, this pattern is vouched for by Hans Boehm
-        // (http://schd.ws/hosted_files/cppcon2016/74/HansWeakAtomics.pdf Page 27)
-        if !self.initialized.load(Ordering::Acquire) {
-            // We *may* not be initialized. We have to block to be certain.
-            let _lock = self.lock.lock().unwrap();
-            if !self.initialized.load(Ordering::Relaxed) {
-                // Ok, we're definitely uninitialized.
-                // Safe to fiddle with the UnsafeCell now, because we're locked,
-                // and there can't be any outstanding references.
-                let value = unsafe { &mut *self.value.get() };
-                *value = Some(f());
-                self.initialized.store(true, Ordering::Release);
-            } else {
-                // We raced, and someone else initialized us. We can fall
-                // through now.
-            }
-        }
-
-        // We're initialized, our value is immutable, no synchronization needed.
-        unsafe { (*self.value.get()).as_ref().unwrap() }
+        self.inner.get_or_create(|_| {
+            f()
+        })
     }
 
     /// Get a reference to the contained value, returning `Some(ref)` if the
@@ -69,16 +139,9 @@ impl<T> Lazy<T> {
     /// guaranteed that if a reference is returned it is to the value inside
     /// the `Lazy<T>`.
     pub fn get<'a>(&'a self) -> Option<&'a T> {
-        if self.initialized.load(Ordering::Acquire) {
-            // We're initialized, our value is immutable, no synchronization needed.
-            unsafe { (*self.value.get()).as_ref() }
-        } else {
-            None
-        }
+        self.inner.get()
     }
 }
-
-unsafe impl<T> Sync for Lazy<T> { }
 
 #[cfg(test)]
 extern crate scoped_pool;
@@ -89,10 +152,10 @@ mod tests {
     use scoped_pool::Pool;
     use std::{thread, time};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use super::Lazy;
+    use super::{Lazy, LazyTransform};
 
     #[test]
-    fn test_basic() {
+    fn test_lazy() {
         let lazy_value: Lazy<u8> = Lazy::new();
 
         assert_eq!(lazy_value.get(), None);
@@ -117,6 +180,44 @@ mod tests {
                         n_ref.fetch_add(1, Ordering::Relaxed);
 
                         42
+                    });
+                    assert_eq!(value, 42);
+
+                    let value = lazy_ref.get();
+                    assert_eq!(value, Some(&42));
+                });
+            }
+        });
+
+        assert_eq!(n.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_lazy_transform() {
+        let lazy_value: LazyTransform<u8, u8> = LazyTransform::new(21);
+
+        assert_eq!(lazy_value.get(), None);
+
+        let n = AtomicUsize::new(0);
+
+        let pool = Pool::new(100);
+        pool.scoped(|scope| {
+            for _ in 0..100 {
+                let lazy_ref = &lazy_value;
+                let n_ref = &n;
+                scope.execute(move || {
+                    let ten_millis = time::Duration::from_millis(10);
+                    thread::sleep(ten_millis);
+
+                    let value = *lazy_ref.get_or_create(|v| {
+                        // Make everybody else wait on me, because I'm a jerk.
+                        thread::sleep(ten_millis);
+
+                        // Make this relaxed so it doesn't interfere with
+                        // Lazy internals at all.
+                        n_ref.fetch_add(1, Ordering::Relaxed);
+
+                        v * 2
                     });
                     assert_eq!(value, 42);
 

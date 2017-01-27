@@ -103,7 +103,7 @@ impl<T, U> LazyTransform<T, U> {
     }
 }
 
-unsafe impl<T, U> Sync for LazyTransform<T, U> { }
+unsafe impl<T, U> Sync for LazyTransform<T, U> {}
 
 /// `Lazy<T>` is a lazily initialized synchronized holder type.  You can think
 /// of it as a LazyTransform where the initial type doesn't exist.
@@ -114,9 +114,7 @@ pub struct Lazy<T> {
 impl<T> Lazy<T> {
     /// Construct a new, uninitialized `Lazy<T>`.
     pub fn new() -> Lazy<T> {
-        Lazy {
-            inner: LazyTransform::new(()),
-        }
+        Lazy { inner: LazyTransform::new(()) }
     }
 
     /// Get a reference to the contained value, invoking `f` to create it
@@ -129,9 +127,7 @@ impl<T> Lazy<T> {
     pub fn get_or_create<'a, F>(&'a self, f: F) -> &'a T
         where F: FnOnce() -> T
     {
-        self.inner.get_or_create(|_| {
-            f()
-        })
+        self.inner.get_or_create(|_| f())
     }
 
     /// Get a reference to the contained value, returning `Some(ref)` if the

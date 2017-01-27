@@ -1,9 +1,9 @@
 [package]
+name = "lazy-init"
 authors = ["Kyle Huey <khuey@kylehuey.com>"]
 description = "Lazy initialization."
 keywords = ["lazy", "initialization"]
 license = "Apache-2.0/MIT"
-name = "lazy-init"
 repository = "https://github.com/khuey/lazy-init"
 version = "0.1.0"
 

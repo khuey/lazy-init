@@ -22,14 +22,20 @@ enum ThisOrThat<T, U> {
 
 /// `LazyTransform<T, U>` is a synchronized holder type, that holds a value of
 /// type T until it is lazily converted into a value of type U.
-pub struct LazyTransform<T, U> {
+pub struct LazyTransform<T, U>
+    where T: Sync,
+          U: Sync
+{
     initialized: AtomicBool,
     lock: Mutex<()>,
     value: UnsafeCell<Option<ThisOrThat<T, U>>>,
 }
 
 // Implementation details.
-impl<T, U> LazyTransform<T, U> {
+impl<T, U> LazyTransform<T, U>
+    where T: Sync,
+          U: Sync
+{
     fn extract<'a>(&'a self) -> Option<&'a U> {
         // Make sure we're initialized first!
         match unsafe { (*self.value.get()).as_ref() } {
@@ -41,7 +47,10 @@ impl<T, U> LazyTransform<T, U> {
 }
 
 // Public API.
-impl<T, U> LazyTransform<T, U> {
+impl<T, U> LazyTransform<T, U>
+    where T: Sync,
+          U: Sync
+{
     /// Construct a new, untransformed `LazyTransform<T, U>` with an argument of
     /// type T.
     pub fn new(t: T) -> LazyTransform<T, U> {
@@ -103,15 +112,23 @@ impl<T, U> LazyTransform<T, U> {
     }
 }
 
-unsafe impl<T, U> Sync for LazyTransform<T, U> {}
+unsafe impl<T, U> Sync for LazyTransform<T, U>
+    where T: Sync,
+          U: Sync
+{
+}
 
 /// `Lazy<T>` is a lazily initialized synchronized holder type.  You can think
 /// of it as a LazyTransform where the initial type doesn't exist.
-pub struct Lazy<T> {
+pub struct Lazy<T>
+    where T: Sync
+{
     inner: LazyTransform<(), T>,
 }
 
-impl<T> Lazy<T> {
+impl<T> Lazy<T>
+    where T: Sync
+{
     /// Construct a new, uninitialized `Lazy<T>`.
     pub fn new() -> Lazy<T> {
         Lazy { inner: LazyTransform::new(()) }

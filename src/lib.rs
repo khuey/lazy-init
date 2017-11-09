@@ -6,9 +6,9 @@
 //! 3) Immutable after creation
 //! 4) Used on multiple threads
 //!
-//! Lazy<T> is better than Mutex<Option<T>> because after creation accessing
-//! T does not require any locking, just a single boolean load with
-//! Ordering::Acquire (which on x86 is just a compiler barrier, not an actual
+//! `Lazy<T>` is better than `Mutex<Option<T>>` because after creation accessing
+//! `T` does not require any locking, just a single boolean load with
+//! `Ordering::Acquire` (which on x86 is just a compiler barrier, not an actual
 //! memory barrier).
 
 use std::cell::UnsafeCell;
@@ -119,7 +119,7 @@ unsafe impl<T, U> Sync for LazyTransform<T, U>
 }
 
 /// `Lazy<T>` is a lazily initialized synchronized holder type.  You can think
-/// of it as a LazyTransform where the initial type doesn't exist.
+/// of it as a `LazyTransform` where the initial type doesn't exist.
 pub struct Lazy<T>
     where T: Sync
 {

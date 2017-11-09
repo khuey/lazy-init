@@ -118,6 +118,15 @@ unsafe impl<T, U> Sync for LazyTransform<T, U>
 {
 }
 
+impl<T, U> Default for LazyTransform<T, U>
+    where T: Sync + Default,
+          U: Sync
+{
+    fn default() -> Self {
+        LazyTransform::new(T::default())
+    }
+}
+
 /// `Lazy<T>` is a lazily initialized synchronized holder type.  You can think
 /// of it as a `LazyTransform` where the initial type doesn't exist.
 pub struct Lazy<T>
@@ -131,7 +140,7 @@ impl<T> Lazy<T>
 {
     /// Construct a new, uninitialized `Lazy<T>`.
     pub fn new() -> Lazy<T> {
-        Lazy { inner: LazyTransform::new(()) }
+        Self::default()
     }
 
     /// Get a reference to the contained value, invoking `f` to create it
@@ -153,6 +162,16 @@ impl<T> Lazy<T>
     /// the `Lazy<T>`.
     pub fn get(&self) -> Option<&T> {
         self.inner.get()
+    }
+}
+
+// `#[derive(Default)]` automatically adds `T: Default` trait bound, but iti is not good, because
+// `Lazy<T>` always has default value for any `T`.
+impl<T> Default for Lazy<T>
+    where T: Sync
+{
+    fn default() -> Self {
+        Lazy { inner: LazyTransform::new(()) }
     }
 }
 

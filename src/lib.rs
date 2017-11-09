@@ -165,8 +165,8 @@ impl<T> Lazy<T>
     }
 }
 
-// `#[derive(Default)]` automatically adds `T: Default` trait bound, but iti is not good, because
-// `Lazy<T>` always has default value for any `T`.
+// `#[derive(Default)]` automatically adds `T: Default` trait bound, but that
+// is too restrictive, because `Lazy<T>` always has a default value for any `T`.
 impl<T> Default for Lazy<T>
     where T: Sync
 {

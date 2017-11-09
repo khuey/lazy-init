@@ -36,7 +36,7 @@ impl<T, U> LazyTransform<T, U>
     where T: Sync,
           U: Sync
 {
-    fn extract<'a>(&'a self) -> Option<&'a U> {
+    fn extract(&self) -> Option<&U> {
         // Make sure we're initialized first!
         match unsafe { (*self.value.get()).as_ref() } {
             None => None,
@@ -69,7 +69,7 @@ impl<T, U> LazyTransform<T, U>
     ///
     /// The closure can only ever be called once, so think carefully about what
     /// transformation you want to apply!
-    pub fn get_or_create<'a, F>(&'a self, f: F) -> &'a U
+    pub fn get_or_create<F>(&self, f: F) -> &U
         where F: FnOnce(T) -> U
     {
         // In addition to being correct, this pattern is vouched for by Hans Boehm
@@ -102,7 +102,7 @@ impl<T, U> LazyTransform<T, U>
     /// `LazyTransform<T, U>` has been transformed or `None` if it has not.  It
     /// is guaranteed that if a reference is returned it is to the transformed
     /// value inside the the `LazyTransform<T>`.
-    pub fn get<'a>(&'a self) -> Option<&'a U> {
+    pub fn get(&self) -> Option<&U> {
         if self.initialized.load(Ordering::Acquire) {
             // We're initialized, our value is immutable, no synchronization needed.
             self.extract()
@@ -141,7 +141,7 @@ impl<T> Lazy<T>
     ///
     /// The value stored in the `Lazy<T>` is immutable after the closure returns
     /// it, so think carefully about what you want to put inside!
-    pub fn get_or_create<'a, F>(&'a self, f: F) -> &'a T
+    pub fn get_or_create<F>(&self, f: F) -> &T
         where F: FnOnce() -> T
     {
         self.inner.get_or_create(|_| f())
@@ -151,7 +151,7 @@ impl<T> Lazy<T>
     /// `Lazy<T>` has been initialized or `None` if it has not.  It is
     /// guaranteed that if a reference is returned it is to the value inside
     /// the `Lazy<T>`.
-    pub fn get<'a>(&'a self) -> Option<&'a T> {
+    pub fn get(&self) -> Option<&T> {
         self.inner.get()
     }
 }

@@ -110,6 +110,17 @@ impl<T, U> LazyTransform<T, U>
             None
         }
     }
+
+    /// Unwrap the contained value, returning `Ok(U)` if the `LazyTransform<T, U>` has been
+    /// transformed or `Err(T)` if it has not.
+    pub fn into_inner(self) -> Result<U, T> {
+        // We don't need to inspect `self.initialized` since `self` is owned
+        // so it is guaranteed that no other threads are accessing its data.
+        match unsafe { self.value.into_inner().unwrap() } {
+            ThisOrThat::This(t) => Err(t),
+            ThisOrThat::That(u) => Ok(u),
+        }
+    }
 }
 
 unsafe impl<T, U> Sync for LazyTransform<T, U>
@@ -162,6 +173,12 @@ impl<T> Lazy<T>
     /// the `Lazy<T>`.
     pub fn get(&self) -> Option<&T> {
         self.inner.get()
+    }
+
+    /// Unwrap the contained value, returning `Some` if the `Lazy<T>` has been initialized
+    /// or `None` if it has not.
+    pub fn into_inner(self) -> Option<T> {
+        self.inner.into_inner().ok()
     }
 }
 

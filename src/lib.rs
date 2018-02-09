@@ -22,10 +22,7 @@ enum ThisOrThat<T, U> {
 
 /// `LazyTransform<T, U>` is a synchronized holder type, that holds a value of
 /// type T until it is lazily converted into a value of type U.
-pub struct LazyTransform<T, U>
-    where T: Sync,
-          U: Sync
-{
+pub struct LazyTransform<T, U> {
     initialized: AtomicBool,
     lock: Mutex<()>,
     value: UnsafeCell<Option<ThisOrThat<T, U>>>,
@@ -47,10 +44,7 @@ impl<T, U> LazyTransform<T, U>
 }
 
 // Public API.
-impl<T, U> LazyTransform<T, U>
-    where T: Sync,
-          U: Sync
-{
+impl<T, U> LazyTransform<T, U> {
     /// Construct a new, untransformed `LazyTransform<T, U>` with an argument of
     /// type T.
     pub fn new(t: T) -> LazyTransform<T, U> {
@@ -61,6 +55,23 @@ impl<T, U> LazyTransform<T, U>
         }
     }
 
+    /// Unwrap the contained value, returning `Ok(U)` if the `LazyTransform<T, U>` has been
+    /// transformed or `Err(T)` if it has not.
+    pub fn into_inner(self) -> Result<U, T> {
+        // We don't need to inspect `self.initialized` since `self` is owned
+        // so it is guaranteed that no other threads are accessing its data.
+        match unsafe { self.value.into_inner().unwrap() } {
+            ThisOrThat::This(t) => Err(t),
+            ThisOrThat::That(u) => Ok(u),
+        }
+    }
+}
+
+// Public API.
+impl<T, U> LazyTransform<T, U>
+    where T: Sync,
+          U: Sync
+{
     /// Get a reference to the transformed value, invoking `f` to transform it
     /// if the `LazyTransform<T, U>` has yet to be transformed.  It is
     /// guaranteed that if multiple calls to `get_or_create` race, only one
@@ -110,17 +121,6 @@ impl<T, U> LazyTransform<T, U>
             None
         }
     }
-
-    /// Unwrap the contained value, returning `Ok(U)` if the `LazyTransform<T, U>` has been
-    /// transformed or `Err(T)` if it has not.
-    pub fn into_inner(self) -> Result<U, T> {
-        // We don't need to inspect `self.initialized` since `self` is owned
-        // so it is guaranteed that no other threads are accessing its data.
-        match unsafe { self.value.into_inner().unwrap() } {
-            ThisOrThat::This(t) => Err(t),
-            ThisOrThat::That(u) => Ok(u),
-        }
-    }
 }
 
 unsafe impl<T, U> Sync for LazyTransform<T, U>
@@ -140,20 +140,26 @@ impl<T, U> Default for LazyTransform<T, U>
 
 /// `Lazy<T>` is a lazily initialized synchronized holder type.  You can think
 /// of it as a `LazyTransform` where the initial type doesn't exist.
-pub struct Lazy<T>
-    where T: Sync
-{
+pub struct Lazy<T> {
     inner: LazyTransform<(), T>,
 }
 
-impl<T> Lazy<T>
-    where T: Sync
-{
+impl<T> Lazy<T> {
     /// Construct a new, uninitialized `Lazy<T>`.
     pub fn new() -> Lazy<T> {
         Self::default()
     }
 
+    /// Unwrap the contained value, returning `Some` if the `Lazy<T>` has been initialized
+    /// or `None` if it has not.
+    pub fn into_inner(self) -> Option<T> {
+        self.inner.into_inner().ok()
+    }
+}
+
+impl<T> Lazy<T>
+    where T: Sync
+{
     /// Get a reference to the contained value, invoking `f` to create it
     /// if the `Lazy<T>` is uninitialized.  It is guaranteed that if multiple
     /// calls to `get_or_create` race, only one will invoke its closure, and
@@ -174,19 +180,11 @@ impl<T> Lazy<T>
     pub fn get(&self) -> Option<&T> {
         self.inner.get()
     }
-
-    /// Unwrap the contained value, returning `Some` if the `Lazy<T>` has been initialized
-    /// or `None` if it has not.
-    pub fn into_inner(self) -> Option<T> {
-        self.inner.into_inner().ok()
-    }
 }
 
 // `#[derive(Default)]` automatically adds `T: Default` trait bound, but that
 // is too restrictive, because `Lazy<T>` always has a default value for any `T`.
-impl<T> Default for Lazy<T>
-    where T: Sync
-{
+impl<T> Default for Lazy<T> {
     fn default() -> Self {
         Lazy { inner: LazyTransform::new(()) }
     }

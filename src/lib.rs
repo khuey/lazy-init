@@ -12,6 +12,7 @@
 //! memory barrier).
 
 use std::cell::UnsafeCell;
+use std::fmt;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -187,6 +188,18 @@ impl<T> Lazy<T>
 impl<T> Default for Lazy<T> {
     fn default() -> Self {
         Lazy { inner: LazyTransform::new(()) }
+    }
+}
+
+impl<T> fmt::Debug for Lazy<T>
+    where T: fmt::Debug + Sync
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(v) = self.get() {
+            f.write_fmt(format_args!("Lazy({:?})", v))
+        } else {
+            f.write_str("Lazy(<uninitialized>)")
+        }
     }
 }
 

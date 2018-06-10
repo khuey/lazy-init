@@ -116,7 +116,7 @@ impl<T, U> LazyTransform<T, U>
     pub fn into_inner(self) -> Result<U, T> {
         // We don't need to inspect `self.initialized` since `self` is owned
         // so it is guaranteed that no other threads are accessing its data.
-        match unsafe { self.value.into_inner().unwrap() } {
+        match self.value.into_inner().unwrap() {
             ThisOrThat::This(t) => Err(t),
             ThisOrThat::That(u) => Ok(u),
         }

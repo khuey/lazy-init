@@ -30,10 +30,7 @@ pub struct LazyTransform<T, U> {
 }
 
 // Implementation details.
-impl<T, U> LazyTransform<T, U>
-    where T: Sync,
-          U: Sync
-{
+impl<T, U> LazyTransform<T, U> {
     fn extract(&self) -> Option<&U> {
         // Make sure we're initialized first!
         match unsafe { (*self.value.get()).as_ref() } {
@@ -69,10 +66,7 @@ impl<T, U> LazyTransform<T, U> {
 }
 
 // Public API.
-impl<T, U> LazyTransform<T, U>
-    where T: Sync,
-          U: Sync
-{
+impl<T, U> LazyTransform<T, U> {
     /// Get a reference to the transformed value, invoking `f` to transform it
     /// if the `LazyTransform<T, U>` has yet to be transformed.  It is
     /// guaranteed that if multiple calls to `get_or_create` race, only one
@@ -124,15 +118,17 @@ impl<T, U> LazyTransform<T, U>
     }
 }
 
+// As `T` is only ever accessed when locked, it's enough if it's `Send` for `Self` to be `Sync`.
 unsafe impl<T, U> Sync for LazyTransform<T, U>
-    where T: Sync + Send,
-          U: Sync
+where
+    T: Send,
+    U: Sync,
 {
 }
 
 impl<T, U> Default for LazyTransform<T, U>
-    where T: Sync + Default,
-          U: Sync
+where
+    T: Default,
 {
     fn default() -> Self {
         LazyTransform::new(T::default())
@@ -158,9 +154,7 @@ impl<T> Lazy<T> {
     }
 }
 
-impl<T> Lazy<T>
-    where T: Sync
-{
+impl<T> Lazy<T> {
     /// Get a reference to the contained value, invoking `f` to create it
     /// if the `Lazy<T>` is uninitialized.  It is guaranteed that if multiple
     /// calls to `get_or_create` race, only one will invoke its closure, and

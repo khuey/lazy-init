@@ -13,8 +13,8 @@
 
 use std::cell::UnsafeCell;
 use std::fmt;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 enum ThisOrThat<T, U> {
     This(T),
@@ -76,7 +76,8 @@ impl<T, U> LazyTransform<T, U> {
     /// The closure can only ever be called once, so think carefully about what
     /// transformation you want to apply!
     pub fn get_or_create<F>(&self, f: F) -> &U
-        where F: FnOnce(T) -> U
+    where
+        F: FnOnce(T) -> U,
     {
         // In addition to being correct, this pattern is vouched for by Hans Boehm
         // (http://schd.ws/hosted_files/cppcon2016/74/HansWeakAtomics.pdf Page 27)
@@ -163,7 +164,8 @@ impl<T> Lazy<T> {
     /// The value stored in the `Lazy<T>` is immutable after the closure returns
     /// it, so think carefully about what you want to put inside!
     pub fn get_or_create<F>(&self, f: F) -> &T
-        where F: FnOnce() -> T
+    where
+        F: FnOnce() -> T,
     {
         self.inner.get_or_create(|_| f())
     }
@@ -181,12 +183,15 @@ impl<T> Lazy<T> {
 // is too restrictive, because `Lazy<T>` always has a default value for any `T`.
 impl<T> Default for Lazy<T> {
     fn default() -> Self {
-        Lazy { inner: LazyTransform::new(()) }
+        Lazy {
+            inner: LazyTransform::new(()),
+        }
     }
 }
 
 impl<T> fmt::Debug for Lazy<T>
-    where T: fmt::Debug + Sync
+where
+    T: fmt::Debug + Sync,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(v) = self.get() {
@@ -203,10 +208,10 @@ extern crate scoped_pool;
 #[cfg(test)]
 mod tests {
 
-    use scoped_pool::Pool;
-    use std::{thread, time};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use super::{Lazy, LazyTransform};
+    use scoped_pool::Pool;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{thread, time};
 
     #[test]
     fn test_lazy() {

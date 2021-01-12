@@ -179,10 +179,10 @@ where
                 self.initialized.store(true, Ordering::Release);
             }
         } else {
-            // We *may* not be initialized. We have to block here before accessing `value`,
+            // `source` *may* not be initialized. We have to block here before accessing `value`,
             // which also synchronises the `initialized` load (and incidentally also the `initialized`
             // store due to the exclusive reference to `self`, so that can be `Relaxed` here too).
-            let _lock = self.lock.lock().unwrap();
+            let _lock = source.lock.lock().unwrap();
             unsafe {
                 // SAFETY:
                 // Exclusive access to `source` while `_lock` is held.

@@ -123,7 +123,7 @@ impl<T, U> LazyTransform<T, U> {
 unsafe impl<T, U> Sync for LazyTransform<T, U>
 where
     T: Send,
-    U: Sync,
+    U: Send + Sync,
 {
 }
 

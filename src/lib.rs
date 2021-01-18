@@ -191,7 +191,7 @@ impl<T> Default for Lazy<T> {
 
 impl<T> fmt::Debug for Lazy<T>
 where
-    T: fmt::Debug + Sync,
+    T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(v) = self.get() {

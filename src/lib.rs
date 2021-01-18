@@ -16,6 +16,7 @@ use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
+#[derive(Clone)]
 enum ThisOrThat<T, U> {
     This(T),
     That(U),
@@ -127,6 +128,71 @@ where
 {
 }
 
+impl<T, U> Clone for LazyTransform<T, U>
+where
+    T: Clone,
+    U: Clone,
+{
+    fn clone(&self) -> Self {
+        // Overall, this method is very similar to `get_or_create` and uses the same
+        // soundness reasoning.
+
+        if self.initialized.load(Ordering::Acquire) {
+            Self {
+                initialized: true.into(),
+                lock: Mutex::default(),
+                value: UnsafeCell::new(unsafe {
+                    // SAFETY:
+                    // Everything is initialized and immutable here, so lockless cloning is safe.
+                    (&*self.value.get()).clone()
+                }),
+            }
+        } else {
+            // We *may* not be initialized. We have to block here before accessing `value`,
+            // which also synchronises the `initialized` load.
+            let _lock = self.lock.lock().unwrap();
+            Self {
+                initialized: self.initialized.load(Ordering::Relaxed).into(),
+                lock: Mutex::default(),
+                value: UnsafeCell::new(unsafe {
+                    // SAFETY:
+                    // Exclusive access while `_lock` is held.
+                    (&*self.value.get()).clone()
+                }),
+            }
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        // Overall, this method is very similar to `get_or_create` and uses the same
+        // soundness reasoning. It's implemented explicitly here to avoid a `Mutex` drop/new.
+
+        if self.initialized.load(Ordering::Acquire) {
+            unsafe {
+                // SAFETY:
+                // Everything is initialized and immutable here, so lockless cloning is safe.
+                // It's still important to store `initialized` with correct ordering, though.
+                *self.value.get() = (&*source.value.get()).clone();
+                self.initialized.store(true, Ordering::Release);
+            }
+        } else {
+            // `source` *may* not be initialized. We have to block here before accessing `value`,
+            // which also synchronises the `initialized` load (and incidentally also the `initialized`
+            // store due to the exclusive reference to `self`, so that can be `Relaxed` here too).
+            let _lock = source.lock.lock().unwrap();
+            unsafe {
+                // SAFETY:
+                // Exclusive access to `source` while `_lock` is held.
+                *self.value.get() = (&*source.value.get()).clone();
+                self.initialized.store(
+                    source.initialized.load(Ordering::Relaxed),
+                    Ordering::Relaxed,
+                );
+            }
+        }
+    }
+}
+
 impl<T, U> Default for LazyTransform<T, U>
 where
     T: Default,
@@ -138,6 +204,7 @@ where
 
 /// `Lazy<T>` is a lazily initialized synchronized holder type.  You can think
 /// of it as a `LazyTransform` where the initial type doesn't exist.
+#[derive(Clone)]
 pub struct Lazy<T> {
     inner: LazyTransform<(), T>,
 }

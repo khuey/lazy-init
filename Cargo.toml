@@ -5,8 +5,8 @@ description = "Lazy initialization."
 keywords = ["lazy", "initialization"]
 license = "Apache-2.0/MIT"
 repository = "https://github.com/khuey/lazy-init"
-documentation = "https://docs.rs/lazy-init/~0.3"
-version = "0.4.0"
+documentation = "https://docs.rs/lazy-init/~0.5"
+version = "0.5.0"
 
 [dev-dependencies]
 scoped-pool = "1.0.0"

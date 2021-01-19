@@ -110,7 +110,7 @@ impl<T, U> LazyTransform<T, U>
         self.extract().unwrap()
     }
 
-    /// Try to get a reference to the transformed value, invoking a fallible`f` to
+    /// Try to get a reference to the transformed value, invoking a fallible `f` to
     /// transform it if the `LazyTransform<T, U>` has yet to be transformed.
     /// It is guaranteed that if multiple calls to `get_or_create` race, only one
     /// will **successfully** invoke its closure, and every call will receive a

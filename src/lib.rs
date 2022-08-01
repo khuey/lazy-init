@@ -270,13 +270,13 @@ where
 }
 
 #[cfg(test)]
-extern crate scoped_pool;
+extern crate rayon;
 
 #[cfg(test)]
 mod tests {
 
     use super::{Lazy, LazyTransform};
-    use scoped_pool::Pool;
+    use rayon::ThreadPoolBuilder;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::{thread, time};
 
@@ -288,12 +288,12 @@ mod tests {
 
         let n = AtomicUsize::new(0);
 
-        let pool = Pool::new(100);
-        pool.scoped(|scope| {
+        let pool = ThreadPoolBuilder::new().num_threads(100).build().unwrap();
+        pool.scope(|scope| {
             for _ in 0..100 {
                 let lazy_ref = &lazy_value;
                 let n_ref = &n;
-                scope.execute(move || {
+                scope.spawn(move |_| {
                     let ten_millis = time::Duration::from_millis(10);
                     thread::sleep(ten_millis);
 
@@ -326,12 +326,12 @@ mod tests {
 
         let n = AtomicUsize::new(0);
 
-        let pool = Pool::new(100);
-        pool.scoped(|scope| {
+        let pool = ThreadPoolBuilder::new().num_threads(100).build().unwrap();
+        pool.scope(|scope| {
             for _ in 0..100 {
                 let lazy_ref = &lazy_value;
                 let n_ref = &n;
-                scope.execute(move || {
+                scope.spawn(move |_| {
                     let ten_millis = time::Duration::from_millis(10);
                     thread::sleep(ten_millis);
 

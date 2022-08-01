@@ -106,6 +106,52 @@ impl<T, U> LazyTransform<T, U> {
         self.extract().unwrap()
     }
 
+    /// Try to get a reference to the transformed value, invoking a fallible `f` to
+    /// transform it if the `LazyTransform<T, U>` has yet to be transformed.
+    /// It is guaranteed that if multiple calls to `get_or_create` race, only one
+    /// will **successfully** invoke its closure, and every call will receive a
+    /// reference to the newly transformed value.
+    ///
+    /// The closure can only ever be successfully called once, so think carefully
+    /// about what transformation you want to apply!
+    ///
+    /// # Errors
+    ///
+    /// Iff `f` returns a [`Result::Err`], this error is returned verbatim.
+    pub fn try_get_or_create<F, E>(&self, f: F) -> Result<&U, E>
+    where
+        T: Clone,
+        F: FnOnce(T) -> Result<U, E>,
+    {
+        // In addition to being correct, this pattern is vouched for by Hans Boehm
+        // (http://schd.ws/hosted_files/cppcon2016/74/HansWeakAtomics.pdf Page 27)
+        if !self.initialized.load(Ordering::Acquire) {
+            // We *may* not be initialized. We have to block to be certain.
+            let _lock = self.lock.lock().unwrap();
+            if !self.initialized.load(Ordering::Relaxed) {
+                // Ok, we're definitely uninitialized.
+                // Safe to fiddle with the UnsafeCell now, because we're locked,
+                // and there can't be any outstanding references.
+                //
+                // However, since this function can return early without poisoning this instance,
+                // `self.value` must stay valid until overwritten with `f`'s `Ok`.
+                let value = unsafe { &mut *self.value.get() };
+                let this = match value.as_ref().unwrap() {
+                    ThisOrThat::This(t) => t.clone(),
+                    ThisOrThat::That(_) => panic!(), // Can't already be initialized!
+                };
+                *value = Some(ThisOrThat::That(f(this)?));
+                self.initialized.store(true, Ordering::Release);
+            } else {
+                // We raced, and someone else initialized us. We can fall
+                // through now.
+            }
+        }
+
+        // We're initialized, our value is immutable, no synchronization needed.
+        Ok(self.extract().unwrap())
+    }
+
     /// Get a reference to the transformed value, returning `Some(&U)` if the
     /// `LazyTransform<T, U>` has been transformed or `None` if it has not.  It
     /// is guaranteed that if a reference is returned it is to the transformed
@@ -237,6 +283,24 @@ impl<T> Lazy<T> {
         self.inner.get_or_create(|_| f())
     }
 
+    /// Tries to get a reference to the contained value, invoking `f` to create it
+    /// if the `Lazy<T>` is uninitialized.  It is guaranteed that if multiple
+    /// calls to `get_or_create` race, only one will **successfully** invoke its
+    /// closure, and every call will receive a reference to the newly created value.
+    ///
+    /// The value stored in the `Lazy<T>` is immutable after the closure succeeds
+    /// and returns it, so think carefully about what you want to put inside!
+    ///
+    /// # Errors
+    ///
+    /// Iff `f` returns a [`Result::Err`], this error is returned verbatim.
+    pub fn try_get_or_create<F, E>(&self, f: F) -> Result<&T, E>
+    where
+        F: FnOnce() -> Result<T, E>,
+    {
+        self.inner.try_get_or_create(|_| f())
+    }
+
     /// Get a reference to the contained value, returning `Some(ref)` if the
     /// `Lazy<T>` has been initialized or `None` if it has not.  It is
     /// guaranteed that if a reference is returned it is to the value inside
@@ -319,6 +383,47 @@ mod tests {
     }
 
     #[test]
+    fn test_lazy_fallible() {
+        let lazy_value: Lazy<u8> = Lazy::new();
+
+        lazy_value.try_get_or_create(|| Err(())).unwrap_err();
+        assert_eq!(lazy_value.get(), None);
+
+        let n = AtomicUsize::new(0);
+
+        let pool = Pool::new(100);
+        pool.scoped(|scope| {
+            for _ in 0..100 {
+                let lazy_ref = &lazy_value;
+                let n_ref = &n;
+                scope.execute(move || {
+                    let ten_millis = time::Duration::from_millis(10);
+                    thread::sleep(ten_millis);
+
+                    let value = *lazy_ref
+                        .try_get_or_create(|| {
+                            // Make everybody else wait on me, because I'm a jerk.
+                            thread::sleep(ten_millis);
+
+                            // Make this relaxed so it doesn't interfere with
+                            // Lazy internals at all.
+                            n_ref.fetch_add(1, Ordering::Relaxed);
+
+                            Result::<_, ()>::Ok(42)
+                        })
+                        .unwrap();
+                    assert_eq!(value, 42);
+
+                    let value = lazy_ref.get();
+                    assert_eq!(value, Some(&42));
+                });
+            }
+        });
+
+        assert_eq!(n.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
     fn test_lazy_transform() {
         let lazy_value: LazyTransform<u8, u8> = LazyTransform::new(21);
 
@@ -345,6 +450,47 @@ mod tests {
 
                         v * 2
                     });
+                    assert_eq!(value, 42);
+
+                    let value = lazy_ref.get();
+                    assert_eq!(value, Some(&42));
+                });
+            }
+        });
+
+        assert_eq!(n.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_lazy_transform_fallible() {
+        let lazy_value: LazyTransform<u8, u8> = LazyTransform::new(21);
+
+        lazy_value.try_get_or_create(|_| Err(())).unwrap_err();
+        assert_eq!(lazy_value.get(), None);
+
+        let n = AtomicUsize::new(0);
+
+        let pool = Pool::new(100);
+        pool.scoped(|scope| {
+            for _ in 0..100 {
+                let lazy_ref = &lazy_value;
+                let n_ref = &n;
+                scope.execute(move || {
+                    let ten_millis = time::Duration::from_millis(10);
+                    thread::sleep(ten_millis);
+
+                    let value = *lazy_ref
+                        .try_get_or_create(|v| {
+                            // Make everybody else wait on me, because I'm a jerk.
+                            thread::sleep(ten_millis);
+
+                            // Make this relaxed so it doesn't interfere with
+                            // Lazy internals at all.
+                            n_ref.fetch_add(1, Ordering::Relaxed);
+
+                            Result::<_, ()>::Ok(v * 2)
+                        })
+                        .unwrap();
                     assert_eq!(value, 42);
 
                     let value = lazy_ref.get();

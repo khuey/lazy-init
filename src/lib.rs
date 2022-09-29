@@ -269,6 +269,15 @@ where
     }
 }
 
+impl<T> PartialEq for Lazy<T>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.get() == other.get()
+    }
+}
+
 #[cfg(test)]
 extern crate rayon;
 
